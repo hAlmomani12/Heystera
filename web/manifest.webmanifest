@@ -1,0 +1,32 @@
+{
+  "id": "/",
+  "name": "مطعم هستيريا",
+  "short_name": "هستيريا",
+  "description": "أكل بيجنّن، على الفحم. اطلب، احجز، أو احكي مع هستي.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0d0806",
+  "theme_color": "#0d0806",
+  "categories": ["food", "lifestyle"],
+  "icons": [
+    { "src": "/brand/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/icon-any-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/brand/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "القائمة", "short_name": "القائمة", "url": "/?source=shortcut#menu", "icons": [{ "src": "/brand/icon-192.png", "sizes": "192x192" }] },
+    { "name": "احجز طاولة", "short_name": "احجز", "url": "/?source=shortcut#reserve", "icons": [{ "src": "/brand/icon-192.png", "sizes": "192x192" }] },
+    { "name": "سلتي", "short_name": "سلتي", "url": "/?source=shortcut#cart", "icons": [{ "src": "/brand/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "screenshots": [
+    { "src": "/brand/screen-mobile.jpg", "sizes": "780x1688", "type": "image/jpeg", "form_factor": "narrow", "label": "قائمة هستيريا" },
+    { "src": "/brand/screen-mobile-2.jpg", "sizes": "780x1688", "type": "image/jpeg", "form_factor": "narrow", "label": "سلة الطلب" },
+    { "src": "/brand/screen-wide.jpg", "sizes": "1280x800", "type": "image/jpeg", "form_factor": "wide", "label": "الصفحة الرئيسية" }
+  ]
+}

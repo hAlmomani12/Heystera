@@ -6,6 +6,7 @@ OpenAI Realtime مباشرة عبر WebRTC. مفتاحك الحقيقي لا ي�
 التشغيل:  python server.py   ثم افتح  http://localhost:8000
 """
 import json
+import mimetypes
 import os
 import secrets
 import time
@@ -16,6 +17,9 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("text/javascript", ".js")
 
 ROOT = Path(__file__).parent
 WEB = ROOT / "web"
@@ -190,7 +194,12 @@ async def headers(request: Request, call_next):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     path = request.url.path
-    if path.startswith(("/img/", "/brand/")):
+    if path == "/sw.js":
+        resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["Service-Worker-Allowed"] = "/"
+    elif path == "/" or path.endswith(".webmanifest"):
+        resp.headers["Cache-Control"] = "no-cache"
+    elif path.startswith(("/img/", "/brand/")):
         resp.headers["Cache-Control"] = "public, max-age=2592000, immutable"
     elif path.endswith((".js", ".css")):
         resp.headers["Cache-Control"] = "public, max-age=300"

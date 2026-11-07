@@ -179,7 +179,8 @@ async function post(url, body) {
   if (location.protocol === "file:") return { offline: true };
   let r;
   try { r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
-  catch { return { offline: true }; }
+  catch { document.body.classList.add("is-offline"); return { error: "ما في إنترنت هسّا. تأكد من الاتصال وجرّب كمان مرة." }; }
+  document.body.classList.remove("is-offline");
   if (r.status === 404 || r.status === 405) return { offline: true };   // static hosting without our API
   const j = await r.json().catch(() => ({}));
   return r.ok ? j : { error: j.detail || "صار خطأ، جرّب كمان مرة" };
@@ -345,6 +346,53 @@ function openDrawer(on) {
 burger.onclick = () => openDrawer(!drawer.classList.contains("on"));
 drawer.addEventListener("click", e => { if (e.target.closest("a,button") || e.target === drawer) openDrawer(false); });
 addEventListener("keydown", e => { if (e.key === "Escape" && drawer.classList.contains("on")) { openDrawer(false); burger.focus(); } });
+
+/* ---------------- installable app (PWA) ---------------- */
+const standalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let deferredPrompt = null, barArmed = false;
+const installEls = () => $$(".install-btn, [data-install]");
+function showInstall(on) { installEls().forEach(el => el.hidden = !on); }
+function maybeBar() {
+  if (standalone() || (!deferredPrompt && !isIOS)) return;
+  const until = +(store("hys-install-later") || 0); if (Date.now() < until) return;
+  if (innerWidth > 1024) return;                              // banner is for phones/tablets; desktop gets the nav button
+  $("#installBar").hidden = false;
+}
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(e => console.warn("SW", e)));
+}
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferredPrompt = e; showInstall(true); if (barArmed) setTimeout(maybeBar, 1500); });
+addEventListener("appinstalled", () => { deferredPrompt = null; showInstall(false); $("#installBar").hidden = true; toast("تثبّت التطبيق! لاقيه على الشاشة الرئيسية 🔥"); });
+if (isIOS && !standalone() && location.protocol !== "file:") showInstall(true);
+addEventListener("scroll", () => { if (!barArmed && scrollY > innerHeight * 1.2) { barArmed = true; setTimeout(maybeBar, 1500); } }, { passive: true });
+async function install() {
+  $("#installBar").hidden = true;
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice.catch(() => ({}));
+    deferredPrompt = null; if (outcome !== "accepted") store("hys-install-later", Date.now() + 3 * 864e5);
+    showInstall(false); return;
+  }
+  const share = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  showModal(`<h3 id="mTitle">ثبّت هستيريا على الآيفون</h3>
+    <p>بثلاث كبسات من Safari:</p>
+    <ol class="ios-steps"><li><i>1</i><span>اكبس زر المشاركة ${share} تحت بالمتصفح</span></li><li><i>2</i><span>انزل واختار <b>«إضافة إلى الشاشة الرئيسية»</b></span></li><li><i>3</i><span>اكبس <b>«إضافة»</b>، وهيك صار عندك التطبيق</span></li></ol>
+    <div class="ctas"><button class="btn btn-hot" data-close>تمام</button></div>`);
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-install]")) { e.preventDefault(); install(); } });
+$("#installBtn").onclick = install;
+$("#installClose").onclick = () => { $("#installBar").hidden = true; store("hys-install-later", Date.now() + 3 * 864e5); };
+if (standalone()) showInstall(false);
+
+/* offline indicator */
+const netState = () => document.body.classList.toggle("is-offline", !navigator.onLine);
+addEventListener("online", () => { netState(); toast("رجع النت 👌"); });
+addEventListener("offline", netState); netState();
+
+/* app shortcuts: #cart opens the cart */
+if (location.hash === "#cart") setTimeout(() => openCart(true), 400);
+addEventListener("hashchange", () => { if (location.hash === "#cart") openCart(true); });
 
 syncCart();
 
