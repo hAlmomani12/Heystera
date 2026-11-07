@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مطعم هستيريا — أكل بيجنّن، على الفحم | عمّان</title>
+<meta name="description" content="مطعم هستيريا في عمّان: مشاوي على الفحم، صحن الهستيريا، زرب وكنافة سخنة. اطلب أونلاين أو احكي مع هستي، الموظف الصوتي.">
+<meta name="theme-color" content="#0d0806">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23ff4d1c'/%3E%3Cpath d='M16 5c2 4 7 6 7 12a7 7 0 0 1-14 0c0-3 1.6-5 2.6-6.4.6 2.2 2 3.2 3.4 3.4-1.3-3.8-.6-6.6 1-9z' fill='%23ffd27a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lalezar&family=Aref+Ruqaa:wght@700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="nav glass rise" style="--d:.05s">
+  <a href="#top" class="brand" aria-label="مطعم هستيريا — الرئيسية">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="10" fill="#ff4d1c"/><path d="M16 5c2 4 7 6 7 12a7 7 0 0 1-14 0c0-3 1.6-5 2.6-6.4.6 2.2 2 3.2 3.4 3.4-1.3-3.8-.6-6.6 1-9z" fill="#ffd27a"/></svg>
+    هستيريا <small>HYSTERIA</small>
+  </a>
+  <nav class="links" aria-label="التنقل">
+    <a href="#menu" data-sec="menu">القائمة</a><a href="#signature" data-sec="signature">أطباق البيت</a><a href="#story" data-sec="story">قصتنا</a><a href="#reserve" data-sec="reserve">احجز</a>
+  </nav>
+  <div class="nav-actions">
+    <a href="#menu" class="btn btn-light">اطلب هسّا <span class="chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M13 8H3M7 4L3 8l4 4"/></svg></span></a>
+    <button class="icon-btn" id="cartBtn" aria-label="السلة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14l-1.3 10.4A2 2 0 0 1 15.7 19H8.3a2 2 0 0 1-2-1.6L5 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg><span class="badge" id="cartCount">0</span></button>
+  </div>
+</header>
+
+<main id="top">
+<!-- ================= HERO ================= -->
+<section class="hero" id="home" aria-label="مطعم هستيريا">
+  <div class="hero-fallback" aria-hidden="true"></div>
+  <div class="hero-media" aria-hidden="true"><img id="heroImg" alt=""></div>
+  <canvas id="sparks" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <div class="eyebrow rise" style="--d:.2s"><i></i><span id="openNow">مفتوحين هسّا · عمّان</span></div>
+    <h1>
+      <span class="line rise" style="--d:.32s">أكل بيعمل</span>
+      <span class="line rise hot" style="--d:.46s">هستيريا.</span>
+    </h1>
+    <p class="sub rise" style="--d:.62s">مشاوي على الفحم وأطباق عمّانية بنكهة مجنونة. اطلب بكبسة، أو احكي مع <b>هستي</b> وهو بيرتّبلك الطلب والحجز وانت بتتفرّج.</p>
+    <div class="ctas rise" style="--d:.76s">
+      <button class="btn btn-hot voice-cta" data-voice>احكي مع هستي <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></button>
+      <a href="#menu" class="btn btn-ghost glass">شوف القائمة <span class="chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3v10M4 9l4 4 4-4"/></svg></span></a>
+    </div>
+    <div class="hero-proof rise" style="--d:.9s"><span class="stars" aria-hidden="true">★★★★★</span><span>أكثر طبق بينطلب: كباب هستيريا · توصيل خلال 45 دقيقة</span></div>
+  </div>
+  <div class="marquee" aria-hidden="true"><div class="marquee-track" id="marquee"></div></div>
+</section>
+
+<!-- ================= MENU ================= -->
+<section class="menu" id="menu">
+  <div class="wrap">
+    <div class="menu-head reveal">
+      <div>
+        <div class="label"><b>01</b> القائمة</div>
+        <h2>من الفحم <em>لصحنك</em></h2>
+      </div>
+      <div class="tabs glass" role="tablist" aria-label="أقسام القائمة" id="tabs"></div>
+    </div>
+    <div class="grid" id="grid" role="tabpanel" aria-live="polite"></div>
+  </div>
+</section>
+
+<!-- ================= SIGNATURE ================= -->
+<section class="sig" id="signature">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="label"><b>02</b> أطباق البيت</div>
+      <h2>صحن واحد، <em>والكل بيسكت.</em></h2>
+    </div>
+    <div class="sig-grid">
+      <article class="sig-main reveal" id="sigMain" data-dish="platter">
+        <img id="sigImg" alt="صحن الهستيريا: صينية مشاوي مشكّلة">
+        <span class="tag hot">طبق البيت · لـ4 أشخاص</span>
+        <h3>صحن الهستيريا</h3>
+        <p>كباب، طاووق، كفتة وريش فوق خبز الطابون، مع حمّص وثومية وخضار مشوية. الطبق اللي خلّى الناس تحكي عنّا.</p>
+        <div class="row-f"><span class="price">32<small>دينار</small></span><button class="btn btn-hot" data-add="platter">زيده عالطلب <span class="chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg></span></button></div>
+      </article>
+      <div class="sig-side">
+        <div id="sigSide"></div>
+        <div class="say reveal">
+          <q>طلبت الصحن لأربعة، وكنّا ستة، وزاد. والكنافة؟ ما في كلام.</q>
+          <div class="who"><i>ر</i><span>رنا، زبونة من أيام الافتتاح</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= STORY ================= -->
+<section class="story" id="story">
+  <div class="wrap">
+    <div class="story-grid">
+      <div class="reveal">
+        <div class="label"><b>03</b> قصتنا</div>
+        <h2>اسمنا هستيريا،<br>لأنه <em>هيك بتصير</em><br>أول لقمة.</h2>
+      </div>
+      <div class="reveal">
+        <p>بلّشنا بفكرة وحدة: الأكل لازم يخلّيك تحكي بصوت عالي. فحم سنديان، لحمة بلدية بتتتبّل من الصبح، وخبز طابون بينخبز قدّامك.</p>
+        <p>وعشان ما تضيّع وقتك، خلّينا هستي يرد عليك: بيفرجيك الأطباق، بيعبّيلك الطلب، وبيحجزلك طاولة، كله بالحكي.</p>
+      </div>
+    </div>
+    <div class="stats reveal">
+      <div class="stat"><div class="n" data-count="8">0<sup>ساعات</sup></div><div class="t">بيستوي الزرب تحت الأرض</div></div>
+      <div class="stat"><div class="n" data-count="45">0<sup>دقيقة</sup></div><div class="t">توصيل لأي مكان بعمّان</div></div>
+      <div class="stat"><div class="n" data-count="24">0<sup>/7</sup></div><div class="t">هستي جاهز يرد عليك</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RESERVE ================= -->
+<section class="reserve" id="reserve">
+  <div class="wrap">
+    <div class="reserve-box reveal" id="location">
+      <div>
+        <div class="label"><b>04</b> احجز طاولة</div>
+        <h2>طاولتك <em>جاهزة</em><br>والفحم مولّع.</h2>
+        <p class="lead">عبّي الحجز، أو قول لهستي: «بدي طاولة لأربعة الخميس الساعة ثمانية» وتفرّج عليه بيعبّيه.</p>
+        <div class="cline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg><span id="addr"></span></div>
+        <div class="cline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg><span class="ltr" id="phone"></span></div>
+        <div class="cline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span id="hoursLine"></span></div>
+      </div>
+      <form class="form" id="bookForm" novalidate>
+        <div class="field"><label for="b-name">الاسم</label><input id="b-name" name="name" required placeholder="اسمك الكريم" autocomplete="name"></div>
+        <div class="field"><label for="b-phone">رقم الهاتف</label><input id="b-phone" name="phone" type="tel" required placeholder="07X XXX XXXX" dir="ltr" style="text-align:right" autocomplete="tel"></div>
+        <div class="field"><label for="b-date">التاريخ</label><input id="b-date" name="date" type="date" required></div>
+        <div class="field"><label for="b-time">الوقت</label><input id="b-time" name="time" type="time" required min="12:00" step="900"></div>
+        <div class="field"><label for="b-guests">عدد الأشخاص</label><input id="b-guests" name="guests" type="number" min="1" max="40" value="2" required></div>
+        <div class="field"><label for="b-area">الجلسة</label>
+          <select id="b-area" name="area"><option value="indoor">داخلية قرب الفحم</option><option value="terrace">التراس</option><option value="private">القاعة الخاصة</option></select></div>
+        <div class="field full"><label for="b-note">ملاحظات (اختياري)</label><textarea id="b-note" name="note" placeholder="عيد ميلاد، طلب زرب مسبق، كرسي أطفال..."></textarea></div>
+        <button class="btn btn-light" type="submit">أكّد الحجز <span class="chip"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M13 8H3M7 4L3 8l4 4"/></svg></span></button>
+        <div class="ok" id="bookOk" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a href="#top" class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="10" fill="#ff4d1c"/><path d="M16 5c2 4 7 6 7 12a7 7 0 0 1-14 0c0-3 1.6-5 2.6-6.4.6 2.2 2 3.2 3.4 3.4-1.3-3.8-.6-6.6 1-9z" fill="#ffd27a"/></svg>هستيريا</a>
+        <p style="color:var(--ink-60);font-weight:300;max-width:20rem;margin:14px 0 0">أكل بيجنّن، على الفحم. في قلب عمّان.</p>
+      </div>
+      <div><h4>زورونا</h4><ul><li id="addrFoot"></li><li><a href="#reserve">احجز طاولة</a></li></ul></div>
+      <div><h4>الدوام</h4><ul class="hours" id="hoursFoot"></ul></div>
+      <div><h4>روابط</h4><ul><li><a href="#menu">القائمة</a></li><li><a href="#signature">أطباق البيت</a></li><li><button class="linkish" data-voice style="all:unset;cursor:pointer">احكي مع هستي</button></li></ul></div>
+    </div>
+    <div class="mega" aria-hidden="true">هستيريا</div>
+    <div class="legal"><span>© 2026 مطعم هستيريا. جميع الحقوق محفوظة.</span><span>العنوان والأسعار في هذا العرض تجريبية</span></div>
+  </div>
+</footer>
+
+<!-- ================= CART ================= -->
+<div class="scrim" id="scrim"></div>
+<aside class="cart" id="cart" aria-label="سلة الطلب" aria-hidden="true">
+  <div class="cart-head"><h3>طلبك</h3><button class="icon-btn" id="cartClose" aria-label="سكّر السلة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="cart-items" id="cartItems"></div>
+  <div class="cart-foot" id="cartFoot"></div>
+</aside>
+
+<!-- ================= VOICE DOCK ================= -->
+<div class="dock" id="dock" role="region" aria-label="هستي، الموظف الصوتي">
+  <button class="dock-idle" data-voice>
+    <span class="t">احكي مع هستي<small>بيطلبلك، بيحجزلك، وبيفرجيك الأكل</small></span>
+    <span class="mic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span>
+  </button>
+  <div class="dock-live" aria-live="polite">
+    <div class="dl-top">
+      <div class="orb"><canvas id="orb" width="116" height="116"></canvas></div>
+      <div class="dl-state"><b id="vState">بتصل بهستي…</b><small id="vSub">ثواني بس</small><span class="dl-tool" id="vTool"></span></div>
+      <div class="dl-btns">
+        <button class="icon-btn" id="vMute" aria-label="اكتم المايك" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button class="icon-btn end" id="vEnd" aria-label="سكّر المكالمة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+    </div>
+    <div class="transcript" id="vLog"></div>
+  </div>
+</div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle"><div class="modal-box" id="modalBox"></div></div>
+<div class="toast" id="toast" role="status"></div>
+<canvas id="burst" aria-hidden="true"></canvas>
+
+<script src="data/restaurant.js"></script>
+<script src="js/app.js"></script>
+<script src="js/voice.js"></script>
+</body>
+</html>
