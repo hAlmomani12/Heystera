@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).parent
@@ -189,7 +189,7 @@ async def headers(request: Request, call_next):
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     path = request.url.path
-    if path.startswith("/img/"):
+    if path.startswith(("/img/", "/brand/")):
         resp.headers["Cache-Control"] = "public, max-age=2592000, immutable"
     elif path.endswith((".js", ".css")):
         resp.headers["Cache-Control"] = "public, max-age=300"
@@ -269,8 +269,12 @@ async def booking(request: Request):
 
 
 @app.get("/")
-def index():
-    return FileResponse(WEB / "index.html")
+def index(request: Request):
+    # absolute URL for the WhatsApp / social link preview image
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", f"localhost:{PORT}"))
+    html = (WEB / "index.html").read_text(encoding="utf-8").replace("%%ORIGIN%%", f"{proto}://{host}")
+    return HTMLResponse(html)
 
 
 app.mount("/", StaticFiles(directory=WEB), name="web")
