@@ -131,7 +131,7 @@ function fly(fromEl, d) {
   const r = fromEl.getBoundingClientRect(), t = $("#cartBtn").getBoundingClientRect();
   if (!r.width || r.bottom < 0 || r.top > innerHeight) return;
   const el = document.createElement(d.img ? "img" : "div"); el.className = "fly";
-  if (d.img) el.src = fromEl.currentSrc || fromEl.src || d.img; else el.style.background = "var(--chili)";
+  if (d.img) el.src = localOf(d.img); else el.style.background = "var(--chili)";
   const sx = r.left + r.width / 2 - 35, sy = r.top + r.height / 2 - 35, ex = t.left + t.width / 2 - 35, ey = t.top + t.height / 2 - 35;
   el.style.left = sx + "px"; el.style.top = sy + "px"; document.body.append(el);
   el.animate([{ transform: "translate(0,0) scale(1)", opacity: 1 }, { transform: `translate(${(ex - sx) / 2}px,${ey - sy - 120}px) scale(.9)`, opacity: 1, offset: .5 },
@@ -174,11 +174,15 @@ function renderCart() {
 function setMethod(m) { if (m !== "delivery" && m !== "pickup") return; keepForm(); method = m; renderCart(); }
 function keepForm() { const v = id => $("#" + id)?.value; const me = store("hys-me") || {}; store("hys-me", { name: v("o-name") ?? me.name, phone: v("o-phone") ?? me.phone, address: v("o-addr") ?? me.address }); }
 
+/* POST to our server. Offline (opened as a file / no server) -> {offline:true}; a server rejection -> {error}. */
 async function post(url, body) {
-  if (location.protocol === "file:") throw new Error("offline");
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
-  return r.json();
+  if (location.protocol === "file:") return { offline: true };
+  let r;
+  try { r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+  catch { return { offline: true }; }
+  if (r.status === 404 || r.status === 405) return { offline: true };   // static hosting without our API
+  const j = await r.json().catch(() => ({}));
+  return r.ok ? j : { error: j.detail || "صار خطأ، جرّب كمان مرة" };
 }
 async function submitOrder(fields = {}) {
   if (!cart.size) return { ok: false, error: "السلة فاضية" };
@@ -190,7 +194,9 @@ async function submitOrder(fields = {}) {
   keepForm();
   const body = { name: f.name.value, phone: f.phone.value, address: f.address?.value || "", method, items: [...cart.values()] };
   const total = subtotal() + fee();
-  let ref; try { ref = (await post("/api/order", body)).ref; } catch { ref = "H-" + String(Date.now()).slice(-5); }
+  const res = await post("/api/order", body);
+  if (res.error) { toast(res.error); return { ok: false, error: res.error }; }
+  const ref = res.ref || "H-" + String(Date.now()).slice(-5);
   lastOrder = { ref, method, total }; cart.clear(); syncCart(); burst();
   return { ok: true, ref, total, eta_minutes: method === "delivery" ? 45 : 25 };
 }
@@ -213,10 +219,14 @@ async function confirmBooking() {
   const req = ["b-name", "b-phone", "b-date", "b-time"].map(id => $("#" + id)).filter(el => !el.value.trim());
   if (req.length) { req.forEach(flagBad); req[0].focus(); return { ok: false, missing: req.map(el => el.name) }; }
   if ($("#b-date").value < today()) { flagBad($("#b-date")); return { ok: false, error: "التاريخ فات" }; }
-  const v = readBooking(); let ref;
-  try { ref = (await post("/api/booking", v)).ref; } catch { ref = "B-" + String(Date.now()).slice(-5); }
+  const v = readBooking();
+  const res = await post("/api/booking", v);
+  const ok = $("#bookOk");
+  if (res.error) { ok.textContent = res.error; ok.classList.add("show", "err"); return { ok: false, error: res.error }; }
+  ok.classList.remove("err");
+  const ref = res.ref || "B-" + String(Date.now()).slice(-5);
   const area = $("#b-area").selectedOptions[0].text;
-  const ok = $("#bookOk"); ok.textContent = `تم يا ${v.name}! حجزك رقم ${ref}: ${v.guests} أشخاص يوم ${v.date} الساعة ${v.time} (${area}). رح نتصل فيك على ${v.phone} للتأكيد.`;
+  ok.textContent = `تم يا ${v.name}! حجزك رقم ${ref}: ${v.guests} أشخاص يوم ${v.date} الساعة ${v.time} (${area}). رح نتصل فيك على ${v.phone} للتأكيد.`;
   ok.classList.add("show"); burst();
   return { ok: true, ref, ...v };
 }
@@ -239,7 +249,7 @@ function flagBad(el) { const f = el.closest(".field"); f?.classList.add("bad"); 
 const SECTIONS = { home: "#home", menu: "#menu", signature: "#signature", story: "#story", reserve: "#reserve", location: "#location" };
 function goTo(sec) {
   const el = $(SECTIONS[sec] || SECTIONS.home); if (!el) return false;
-  openCart(false);
+  openCart(false); openDrawer(false);
   el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: sec === "location" ? "center" : "start" });
   return true;
 }
@@ -324,6 +334,17 @@ const secIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersect
 $$("main section").forEach(s => secIO.observe(s));
 const onScroll = () => { nav.classList.toggle("scrolled", scrollY > innerHeight * .5); document.body.classList.toggle("at-hero", scrollY < innerHeight * .55); };
 addEventListener("scroll", onScroll, { passive: true }); onScroll();
+
+/* mobile navigation drawer */
+const drawer = $("#drawer"), burger = $("#menuToggle");
+function openDrawer(on) {
+  drawer.classList.toggle("on", on); burger.setAttribute("aria-expanded", on); drawer.setAttribute("aria-hidden", !on);
+  document.body.classList.toggle("drawer-open", on);
+  if (on) setTimeout(() => drawer.querySelector("a")?.focus(), 50);
+}
+burger.onclick = () => openDrawer(!drawer.classList.contains("on"));
+drawer.addEventListener("click", e => { if (e.target.closest("a,button") || e.target === drawer) openDrawer(false); });
+addEventListener("keydown", e => { if (e.key === "Escape" && drawer.classList.contains("on")) { openDrawer(false); burger.focus(); } });
 
 syncCart();
 

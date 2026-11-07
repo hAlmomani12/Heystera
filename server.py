@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import time
+from datetime import date, datetime
 from pathlib import Path
 
 import httpx
@@ -209,13 +210,15 @@ async def voice_session(request: Request):
         page = await request.json()
     except Exception:
         page = {}
+    if not isinstance(page, dict):
+        page = {}
     if ACCESS_CODE and not secrets.compare_digest(str((page or {}).get("code", "")).strip(), ACCESS_CODE):
         raise HTTPException(403, "رمز الدخول غلط")
     if not allow(client_ip(request)):
         raise HTTPException(429, "استنى ثواني وجرّب كمان مرة")
     if not daily_ok():
         raise HTTPException(429, "خلصت مكالمات اليوم للعرض التجريبي، جرّب بكرا")
-    page = {k: str(v)[:400] for k, v in (page or {}).items() if k in ("section", "cart")}
+    page = {k: str(v)[:400] for k, v in page.items() if k in ("section", "cart")}
     last = ""
     for model in dict.fromkeys([MODEL, FALLBACK_MODEL]):
         async with httpx.AsyncClient(timeout=20) as c:
@@ -238,8 +241,22 @@ async def voice_session(request: Request):
 ORDERS, BOOKINGS = ROOT / "orders.jsonl", ROOT / "bookings.jsonl"
 
 
+async def json_body(request: Request) -> dict:
+    """Parse a JSON object body; anything else is a 400, never a 500."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "البيانات مش مفهومة")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "البيانات مش مفهومة")
+    return body
+
+
+def text(v, n=200) -> str:
+    return str(v if v is not None else "").strip()[:n]
+
+
 def _save(path: Path, rec: dict, prefix: str) -> dict:
-    rec = {k: (str(v)[:300] if not isinstance(v, (list, dict, int, float)) else v) for k, v in rec.items()}
     rec["ref"] = f"{prefix}-{secrets.randbelow(90000) + 10000}"
     rec["at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     with path.open("a", encoding="utf-8") as f:
@@ -250,22 +267,57 @@ def _save(path: Path, rec: dict, prefix: str) -> dict:
 
 @app.post("/api/order")
 async def order(request: Request):
-    body = await request.json()
-    if not body.get("items") or not body.get("name") or not body.get("phone"):
-        raise HTTPException(400, "الطلب ناقص")
+    body = await json_body(request)
+    name, phone, method = text(body.get("name"), 80), text(body.get("phone"), 30), text(body.get("method"), 20) or "delivery"
+    address = text(body.get("address"), 300)
+    raw = body.get("items")
+    if not name or not phone or not isinstance(raw, list) or not raw:
+        raise HTTPException(400, "الطلب ناقص: الاسم والتلفون والأطباق")
+    if method not in ("delivery", "pickup"):
+        raise HTTPException(400, "طريقة الاستلام لازم تكون توصيل أو استلام")
+    if method == "delivery" and not address:
+        raise HTTPException(400, "للتوصيل لازم عنوان")
     prices = {d["id"]: d["price"] for d in kb()["dishes"]}
-    items = [{"id": i["id"], "qty": max(1, int(i.get("qty", 1))), "note": str(i.get("note", ""))[:120]}
-             for i in body["items"] if i.get("id") in prices][:40]
+    items = []
+    for it in raw[:40]:
+        if not isinstance(it, dict) or it.get("id") not in prices:
+            continue
+        try:
+            qty = int(it.get("qty", 1))
+        except (TypeError, ValueError):
+            qty = 1
+        items.append({"id": it["id"], "qty": min(max(qty, 1), 50), "note": text(it.get("note"), 120)})
+    if not items:
+        raise HTTPException(400, "ولا طبق من الطلب موجود بالقائمة")
     total = round(sum(prices[i["id"]] * i["qty"] for i in items), 2)
-    return _save(ORDERS, {**{k: body.get(k, "") for k in ("name", "phone", "method", "address")}, "items": items, "total": total}, "H")
+    fee = 1.5 if method == "delivery" and total < 25 else 0
+    return _save(ORDERS, {"name": name, "phone": phone, "method": method, "address": address,
+                          "items": items, "subtotal": total, "delivery_fee": fee, "total": round(total + fee, 2)}, "H")
 
 
 @app.post("/api/booking")
 async def booking(request: Request):
-    body = await request.json()
-    if not all(body.get(k) for k in ("name", "phone", "date", "time")):
-        raise HTTPException(400, "الحجز ناقص")
-    return _save(BOOKINGS, {k: body.get(k, "") for k in ("name", "phone", "date", "time", "guests", "area", "note")}, "B")
+    body = await json_body(request)
+    rec = {k: text(body.get(k), 300 if k == "note" else 80) for k in ("name", "phone", "date", "time", "area", "note")}
+    if not all(rec[k] for k in ("name", "phone", "date", "time")):
+        raise HTTPException(400, "الحجز ناقص: الاسم والتلفون والتاريخ والوقت")
+    try:
+        day = datetime.strptime(rec["date"], "%Y-%m-%d").date()
+        datetime.strptime(rec["time"], "%H:%M")
+    except ValueError:
+        raise HTTPException(400, "التاريخ أو الوقت مش مضبوط")
+    if day < date.today():
+        raise HTTPException(400, "التاريخ فات")
+    try:
+        guests = int(body.get("guests", 2))
+    except (TypeError, ValueError):
+        guests = 0
+    if not 1 <= guests <= 40:
+        raise HTTPException(400, "عدد الأشخاص لازم يكون بين 1 و40")
+    rec["guests"] = guests
+    if rec["area"] not in ("indoor", "terrace", "private"):
+        rec["area"] = "indoor"
+    return _save(BOOKINGS, rec, "B")
 
 
 @app.get("/")
