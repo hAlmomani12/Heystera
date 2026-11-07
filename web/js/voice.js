@@ -5,12 +5,16 @@
 const H = window.H, $ = s => document.querySelector(s);
 const dock = $("#dock"), log = $("#vLog"), stateEl = $("#vState"), subEl = $("#vSub"), toolEl = $("#vTool");
 let available = null, live = false, demo = false, pc, dc, mic, audioEl, botAnalyser, micAnalyser, ending = false, muted = false;
-let botBubble = null, busy = false;
+let botBubble = null, busy = false, cfg = {}, callTimer;
+const codeKey = "hys-code";
+const getCode = () => { try { return localStorage.getItem(codeKey) || ""; } catch { return ""; } };
+const setCode = v => { try { v ? localStorage.setItem(codeKey, v) : localStorage.removeItem(codeKey); } catch {} };
+let memCode = "";
 
 /* ---------------- availability ---------------- */
 async function checkAvailable() {
   if (location.protocol === "file:") return (available = false);
-  try { const r = await fetch("/api/config", { cache: "no-store" }); available = r.ok && (await r.json()).voice === true; }
+  try { const r = await fetch("/api/config", { cache: "no-store" }); cfg = r.ok ? await r.json() : {}; available = cfg.voice === true; }
   catch { available = false; }
   return available;
 }
@@ -23,7 +27,7 @@ $("#vMute").onclick = () => { muted = !muted; mic?.getAudioTracks().forEach(t =>
 async function toggle() {
   if (live || demo) return dock.scrollIntoView({ block: "end" });
   if (available === null) await checkAvailable();
-  if (available) return start();
+  if (available) return cfg.code_required && !(memCode || getCode()) ? askCode() : start();
   const local = location.protocol === "file:";
   H.showModal(`<h3 id="mTitle">هستي بحاجة للسيرفر</h3>
     <p>${local ? "فتحت الموقع كملف، والمكالمة الصوتية بتحتاج السيرفر الصغير اللي معه." : "السيرفر شغّال بس ما في مفتاح OpenAI، أو الصفحة مفتوحة بمكان ما بيسمح بالمايك."}</p>
@@ -31,6 +35,16 @@ async function toggle() {
     <p>وبهالوقت بتقدر تشوف الحركات بجولة تجريبية بدون صوت:</p>
     <div class="ctas"><button class="btn btn-hot" id="demoBtn">شغّل الجولة التجريبية <span class="chip">▶</span></button><button class="btn btn-ghost" data-close>مش هسّا</button></div>`);
   $("#demoBtn").onclick = () => { H.closeModal(); runDemo(); };
+}
+
+function askCode(wrong = false) {
+  H.showModal(`<h3 id="mTitle">رمز الدخول</h3>
+    <p>${wrong ? "الرمز غلط، جرّب كمان مرة." : "هاي نسخة تجريبية. اكتب الرمز اللي وصلك عشان تحكي مع هستي."}</p>
+    <form id="codeForm" style="display:grid;gap:12px"><div class="field"><input id="codeIn" autocomplete="off" inputmode="text" placeholder="الرمز" aria-label="رمز الدخول" required></div>
+    <div class="ctas"><button class="btn btn-hot" type="submit">يلا نحكي <span class="chip">▶</span></button><button class="btn btn-ghost" type="button" id="codeDemo">الجولة التجريبية</button></div></form>`);
+  setTimeout(() => document.getElementById("codeIn")?.focus(), 100);
+  document.getElementById("codeForm").onsubmit = e => { e.preventDefault(); memCode = document.getElementById("codeIn").value.trim(); setCode(memCode); H.closeModal(); start(); };
+  document.getElementById("codeDemo").onclick = () => { H.closeModal(); runDemo(); };
 }
 
 /* ---------------- UI helpers ---------------- */
@@ -131,8 +145,9 @@ async function start() {
     return fail("المايك مش شغّال");
   }
   try {
-    const r = await fetch("/api/voice/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: H.section, cart: H.cartText() }) });
+    const r = await fetch("/api/voice/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: H.section, cart: H.cartText(), code: memCode || getCode() }) });
     const s = await r.json().catch(() => ({}));
+    if (r.status === 403) { memCode = ""; setCode(""); live = false; cleanup(); closeDock(); return askCode(true); }
     if (!r.ok) throw new Error(s.detail || "السيرفر ما رد");
     if (!live) return cleanup();
 
@@ -148,7 +163,12 @@ async function start() {
     pc.onconnectionstatechange = () => { if (["failed", "disconnected"].includes(pc?.connectionState) && live) fail("انقطع الاتصال"); };
 
     dc = pc.createDataChannel("oai-events");
-    dc.onopen = () => { setState("هستي معك", "احكي براحتك"); send({ type: "response.create" }); };
+    dc.onopen = () => {
+      setState("هستي معك", "احكي براحتك"); send({ type: "response.create" });
+      const mins = cfg.max_minutes || 8;
+      clearTimeout(callTimer);
+      callTimer = setTimeout(() => end(`خلص وقت المكالمة التجريبية (${mins} دقائق)`), mins * 60000);
+    };
     dc.onmessage = e => onEvent(JSON.parse(e.data));
 
     const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
@@ -194,6 +214,7 @@ async function onEvent(ev) {
 function fail(t) { setState(t, "جرّب كمان مرة"); live = false; cleanup(); setTimeout(() => { if (!live && !demo) closeDock(); }, 4500); }
 function end(t) { if (!live) return; line("sys", t); live = false; cleanup(); setState("المكالمة خلصت", "يسلموا!"); setTimeout(() => { if (!live && !demo) closeDock(); }, 1800); }
 function cleanup() {
+  clearTimeout(callTimer);
   try { dc?.close(); } catch {} try { pc?.close(); } catch {}
   mic?.getTracks().forEach(t => t.stop()); if (audioEl) audioEl.srcObject = null;
   pc = dc = mic = null; botAnalyser = micAnalyser = null; botBubble = null;

@@ -3,3 +3,4 @@
 __pycache__/
 orders.jsonl
 bookings.jsonl
+web/img/*.png

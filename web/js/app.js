@@ -41,7 +41,7 @@ if (!os.open) $(".eyebrow i").style.cssText = "background:#ffb547;box-shadow:0 0
 
 /* images fade in when loaded (hero has a fiery fallback) */
 /* prefer the local copy (web/img/<name>.png, saved by 1-install.bat) and fall back to the online one */
-const localOf = src => src && /^https?:/.test(src) ? "img/" + src.split("/").pop() : src;
+const localOf = src => src && /^https?:/.test(src) ? "img/" + src.split("/").pop().replace(/\.png$/i, ".jpg") : src;
 const loadImg = (img, src) => {
   img.onload = () => img.classList.add("ready");
   img.onerror = () => { if (img.dataset.remote !== "1" && src) { img.dataset.remote = "1"; img.src = src; } else img.classList.remove("ready"); };
@@ -322,7 +322,8 @@ $$(".reveal").forEach(el => io.observe(el));
 const nav = $(".nav");
 const secIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { H.section = e.target.id; $$(".links a").forEach(a => a.classList.toggle("on", a.dataset.sec === e.target.id)); } }), { rootMargin: "-45% 0px -50% 0px" });
 $$("main section").forEach(s => secIO.observe(s));
-addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > innerHeight * .5), { passive: true });
+const onScroll = () => { nav.classList.toggle("scrolled", scrollY > innerHeight * .5); document.body.classList.toggle("at-hero", scrollY < innerHeight * .55); };
+addEventListener("scroll", onScroll, { passive: true }); onScroll();
 
 syncCart();
 

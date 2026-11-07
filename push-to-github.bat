@@ -19,8 +19,9 @@ if not "%GE%"=="" (
   git config user.email "%GE%"
 )
 if exist .env echo  .env is ignored, your OpenAI key will NOT be uploaded.
+git rm -r -q --cached --ignore-unmatch "web/img/*.png" >nul 2>nul
 git add -A
-git commit -q -m "Hysteria restaurant website with Hasti voice agent" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01RkWRkTyNTGo8eGSLGUDrQ3" || echo  Nothing new to commit.
+git commit -q -m "Update Hysteria site" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" -m "Claude-Session: https://claude.ai/code/session_01RkWRkTyNTGo8eGSLGUDrQ3" || echo  Nothing new to commit.
 git branch -M main
 git remote remove origin >nul 2>nul
 git remote add origin https://github.com/hAlmomani12/Heystera.git

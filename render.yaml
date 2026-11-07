@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: heystera
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt && python fetch_images.py
+    startCommand: python server.py
+    healthCheckPath: /api/config
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ACCESS_CODE
+        sync: false
+      - key: MAX_SESSIONS_PER_DAY
+        value: "150"
+      - key: MAX_CALL_MINUTES
+        value: "8"
+      - key: REALTIME_MODEL
+        value: gpt-realtime-2.1
+      - key: VOICE
+        value: marin

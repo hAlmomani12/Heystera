@@ -33,6 +33,10 @@ MODEL = os.environ.get("REALTIME_MODEL", "gpt-realtime-2.1")
 FALLBACK_MODEL = "gpt-realtime"
 VOICE = os.environ.get("VOICE", "marin")
 PORT = int(os.environ.get("PORT", "8000"))
+# Protection for a public deployment (Render etc.)
+ACCESS_CODE = os.environ.get("ACCESS_CODE", "").strip()          # if set, callers must type this code before talking to Hasti
+MAX_SESSIONS_PER_DAY = int(os.environ.get("MAX_SESSIONS_PER_DAY", "150"))  # hard cap on voice calls per day (all users)
+MAX_CALL_MINUTES = int(os.environ.get("MAX_CALL_MINUTES", "8"))   # the browser hangs up after this
 
 
 def key() -> str:
@@ -148,6 +152,25 @@ app = FastAPI(title="Hysteria")
 _hits: dict[str, list[float]] = {}
 
 
+_day = {"date": "", "count": 0}
+
+
+def client_ip(request: Request) -> str:
+    # behind Render/Cloudflare the real visitor is the first X-Forwarded-For entry
+    fwd = request.headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() or (request.client.host if request.client else "x")
+
+
+def daily_ok() -> bool:
+    today = time.strftime("%Y-%m-%d")
+    if _day["date"] != today:
+        _day.update(date=today, count=0)
+    if _day["count"] >= MAX_SESSIONS_PER_DAY:
+        return False
+    _day["count"] += 1
+    return True
+
+
 def allow(ip: str) -> bool:
     now = time.time()
     h = [t for t in _hits.get(ip, []) if now - t < 3600]
@@ -165,24 +188,33 @@ async def headers(request: Request, call_next):
     resp.headers["Permissions-Policy"] = "microphone=(self), camera=(), geolocation=()"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    path = request.url.path
+    if path.startswith("/img/"):
+        resp.headers["Cache-Control"] = "public, max-age=2592000, immutable"
+    elif path.endswith((".js", ".css")):
+        resp.headers["Cache-Control"] = "public, max-age=300"
     return resp
 
 
 @app.get("/api/config")
 def config():
-    return {"voice": bool(key())}
+    return {"voice": bool(key()), "code_required": bool(ACCESS_CODE), "max_minutes": MAX_CALL_MINUTES}
 
 
 @app.post("/api/voice/session")
 async def voice_session(request: Request):
     if not key():
         raise HTTPException(503, "المساعد الصوتي مش مفعّل: حط مفتاح OpenAI بملف .env (شغّل 3-change-key.bat)")
-    if not allow(request.client.host if request.client else "x"):
-        raise HTTPException(429, "استنى ثواني وجرّب كمان مرة")
     try:
         page = await request.json()
     except Exception:
         page = {}
+    if ACCESS_CODE and not secrets.compare_digest(str((page or {}).get("code", "")).strip(), ACCESS_CODE):
+        raise HTTPException(403, "رمز الدخول غلط")
+    if not allow(client_ip(request)):
+        raise HTTPException(429, "استنى ثواني وجرّب كمان مرة")
+    if not daily_ok():
+        raise HTTPException(429, "خلصت مكالمات اليوم للعرض التجريبي، جرّب بكرا")
     page = {k: str(v)[:400] for k, v in (page or {}).items() if k in ("section", "cart")}
     last = ""
     for model in dict.fromkeys([MODEL, FALLBACK_MODEL]):
@@ -246,5 +278,5 @@ app.mount("/", StaticFiles(directory=WEB), name="web")
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"\n  مطعم هستيريا شغّال:  http://localhost:{PORT}\n  المساعد الصوتي: {'مفعّل' if key() else 'مش مفعّل (ما في مفتاح)'}\n")
+    print(f"\n  مطعم هستيريا شغّال:  http://localhost:{PORT}\n  المساعد الصوتي: {'مفعّل' if key() else 'مش مفعّل (ما في مفتاح)'}{' · محمي برمز' if ACCESS_CODE else ''}\n")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
