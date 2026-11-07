@@ -30,11 +30,17 @@ async function toggle() {
   if (live || demo) return dock.scrollIntoView({ block: "end" });
   if (available === null) await checkAvailable();
   if (available) return cfg.code_required && !(memCode || getCode()) ? askCode() : start();
-  const local = location.protocol === "file:";
-  H.showModal(`<h3 id="mTitle">هستي بحاجة للسيرفر</h3>
-    <p>${local ? "فتحت الموقع كملف، والمكالمة الصوتية بتحتاج السيرفر الصغير اللي معه." : "السيرفر شغّال بس ما في مفتاح OpenAI، أو الصفحة مفتوحة بمكان ما بيسمح بالمايك."}</p>
+  const file = location.protocol === "file:";
+  const dev = file || /^(localhost|127\.0\.0\.1|\[::1\]|192\.168\.|10\.)/.test(location.hostname);
+  const keyName = cfg.provider === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY";
+  H.showModal(dev ? `<h3 id="mTitle">هستي بحاجة لإعداد</h3>
+    <p>${file ? "فتحت الموقع كملف، والمكالمة الصوتية بتحتاج السيرفر الصغير اللي معه." : `السيرفر شغّال، بس ما في مفتاح ${cfg.provider === "openai" ? "OpenAI" : "Gemini"}.`}</p>
     <ol><li>شغّل <code>1-install.bat</code> مرة وحدة.</li><li>حط مفتاحك بـ <code>3-change-key.bat</code>.</li><li>شغّل <code>2-start.bat</code> وافتح <code>http://localhost:8000</code>.</li></ol>
+    <p>وعلى Render: ضيف <code>${keyName}</code> بقسم Environment.</p>
     <p>وبهالوقت بتقدر تشوف الحركات بجولة تجريبية بدون صوت:</p>
+    <div class="ctas"><button class="btn btn-hot" id="demoBtn">شغّل الجولة التجريبية <span class="chip">▶</span></button><button class="btn btn-ghost" data-close>مش هسّا</button></div>`
+  : `<h3 id="mTitle">هستي مش متاح هسّا</h3>
+    <p>المساعد الصوتي متوقف مؤقتاً. بتقدر تطلب من القائمة عادي، أو تتفرّج على هستي وهو بيشتغل بالجولة التجريبية.</p>
     <div class="ctas"><button class="btn btn-hot" id="demoBtn">شغّل الجولة التجريبية <span class="chip">▶</span></button><button class="btn btn-ghost" data-close>مش هسّا</button></div>`);
   $("#demoBtn").onclick = () => { H.closeModal(); runDemo(); };
 }

@@ -65,9 +65,12 @@ def gemini_key() -> str:
 def provider() -> str:
     """gemini | openai — VOICE_PROVIDER wins; otherwise whichever key exists (Gemini first)."""
     want = os.environ.get("VOICE_PROVIDER", "").strip().lower()
-    if want in ("gemini", "openai"):
+    have = {"gemini": bool(gemini_key()), "openai": bool(openai_key())}
+    if want in have and (have[want] or not any(have.values())):
         return want
-    return "gemini" if gemini_key() else "openai"
+    if want in have and not have[want]:                      # asked for one we have no key for -> use the other
+        print(f"[voice] VOICE_PROVIDER={want} but no key for it; using the other provider")
+    return "gemini" if have["gemini"] else "openai"
 
 
 def key() -> str:
