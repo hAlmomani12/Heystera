@@ -1,7 +1,8 @@
 """مطعم هستيريا — سيرفر الموقع + المساعد الصوتي.
 
-السيرفر يخدم صفحات الموقع، ويعطي المتصفح مفتاحاً مؤقتاً (دقائق قليلة) ليتحدث مع
-OpenAI Realtime مباشرة عبر WebRTC. مفتاحك الحقيقي لا يغادر هذا الجهاز أبداً.
+السيرفر يخدم صفحات الموقع، ويعطي المتصفح مفتاحاً مؤقتاً (دقائق قليلة) ليتحدث مباشرة مع
+Gemini Live (WebSocket) أو OpenAI Realtime (WebRTC). مفتاحك الحقيقي لا يغادر هذا الجهاز أبداً.
+اختيار المزوّد: VOICE_PROVIDER=gemini|openai بملف .env (أو تلقائياً حسب المفتاح الموجود).
 
 التشغيل:  python server.py   ثم افتح  http://localhost:8000
 """
@@ -44,8 +45,33 @@ MAX_SESSIONS_PER_DAY = int(os.environ.get("MAX_SESSIONS_PER_DAY", "150"))  # har
 MAX_CALL_MINUTES = int(os.environ.get("MAX_CALL_MINUTES", "8"))   # the browser hangs up after this
 
 
-def key() -> str:
+GEMINI_URL = os.environ.get("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com").rstrip("/")
+GEMINI_WS = os.environ.get("GEMINI_WS_URL", "wss://generativelanguage.googleapis.com/ws/"
+                           "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-live")
+GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-live-preview")
+GEMINI_VOICE = os.environ.get("GEMINI_VOICE", "Puck")
+GEMINI_LANG = [c.strip() for c in os.environ.get("GEMINI_LANG", "ar-JO").split(",") if c.strip()]  # speech recognition language hint
+
+
+def openai_key() -> str:
     return os.environ.get("OPENAI_API_KEY", "").strip()
+
+
+def gemini_key() -> str:
+    return (os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")).strip()
+
+
+def provider() -> str:
+    """gemini | openai — VOICE_PROVIDER wins; otherwise whichever key exists (Gemini first)."""
+    want = os.environ.get("VOICE_PROVIDER", "").strip().lower()
+    if want in ("gemini", "openai"):
+        return want
+    return "gemini" if gemini_key() else "openai"
+
+
+def key() -> str:
+    return gemini_key() if provider() == "gemini" else openai_key()
 
 
 def kb() -> dict:
@@ -69,6 +95,7 @@ def instructions(page: dict) -> str:
     now = time.strftime("%A %Y-%m-%d %H:%M")
     return f"""أنت "هَستي"، موظف الاستقبال الصوتي في {r['name']} في {r['city']}.
 احكِ دائماً باللهجة الأردنية العمّانية، بنبرة دافئة ومرحة وفيها طاقة، زي واحد بيحب الأكل وبيحب يضيّف.
+الزبون دايماً بيحكي عربي (لهجة أردنية)، وأنت بترد دايماً بالعربي الأردني حتى لو سمعت كلمة إنجليزي. إذا الكلام مش واضح أو سمعته كأنه لغة ثانية، لا تخمّن: قول بلطف «ما سمعتك منيح، عيدها؟».
 أنت في مكالمة صوتية: ردودك قصيرة جداً (جملة أو جملتين)، بدون قوائم أو رموز. لا تقرأ القائمة كاملة أبداً؛ اقترح طبقين أو ثلاثة بالكثير.
 الأسعار قلها بالطريقة الأردنية: "9 دنانير ونص"، "دينارين وربع"، "75 قرش".
 
@@ -134,6 +161,89 @@ TOOLS = [
 ]
 
 
+def _gemini_schema(sch: dict) -> dict:
+    """OpenAI-style JSON schema -> Gemini Schema (uppercase types, supported keys only)."""
+    out = {"type": sch.get("type", "string").upper()}
+    for k in ("description", "enum", "minimum", "maximum"):
+        if k in sch:
+            out[k] = sch[k]
+    if "properties" in sch:
+        out["properties"] = {n: _gemini_schema(v) for n, v in sch["properties"].items()}
+    if sch.get("required"):
+        out["required"] = sch["required"]
+    if "items" in sch:
+        out["items"] = _gemini_schema(sch["items"])
+    return out
+
+
+def gemini_tools() -> list:
+    decls = []
+    for t in TOOLS:
+        d = {"name": t["name"], "description": t["description"]}
+        params = t.get("parameters") or {}
+        if params.get("properties"):
+            d["parameters"] = _gemini_schema(params)
+        decls.append(d)
+    return [{"functionDeclarations": decls}]
+
+
+def vocabulary() -> list:
+    """Words the recogniser should expect: restaurant name, host, dishes."""
+    words = ["هستيريا", "هستي", "مطعم هستيريا", "دينار", "قرش", "توصيل", "استلام", "حجز", "طاولة"]
+    words += [d["name"] for d in kb()["dishes"]]
+    return list(dict.fromkeys(words))[:50]
+
+
+def gemini_setup(page: dict, model: str, hints: bool = True) -> dict:
+    transcription = {"languageCodes": GEMINI_LANG, "customVocabulary": vocabulary()} if hints else {}
+    return {
+        "model": f"models/{model}",
+        "generationConfig": {
+            "responseModalities": ["AUDIO"],
+            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": GEMINI_VOICE}}},
+        },
+        "systemInstruction": {"parts": [{"text": instructions(page)}]},
+        "tools": gemini_tools(),
+        "inputAudioTranscription": transcription,
+        "outputAudioTranscription": {},
+        "realtimeInputConfig": {"automaticActivityDetection": {"silenceDurationMs": 500, "prefixPaddingMs": 200}},
+    }
+
+
+async def mint_gemini(page: dict, hints: bool = True) -> dict:
+    from datetime import timezone, timedelta
+    now = datetime.now(timezone.utc)
+    iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")
+    last = ""
+    for model in dict.fromkeys([GEMINI_MODEL, GEMINI_FALLBACK_MODEL]):
+        token = {
+            "uses": 1,
+            "expireTime": iso(now + timedelta(minutes=MAX_CALL_MINUTES + 2)),
+            "newSessionExpireTime": iso(now + timedelta(minutes=1)),
+            "bidiGenerateContentSetup": gemini_setup(page, model, hints),
+        }
+        async with httpx.AsyncClient(timeout=20) as c:
+            for attempt in range(3):
+                body = token if attempt != 1 else {"authToken": token}   # REST takes fields at top level; older docs wrap them
+                r = await c.post(f"{GEMINI_URL}/v1beta/auth_tokens",
+                                 headers={"x-goog-api-key": gemini_key(), "Content-Type": "application/json"}, json=body)
+                if r.status_code != 400:
+                    break
+                if attempt == 1 and hints:                              # language hint rejected -> plain transcription
+                    print("[voice:gemini] transcription hints rejected, retrying without:", r.text[:200])
+                    token["bidiGenerateContentSetup"] = gemini_setup(page, model, hints=False)
+                    hints = False
+        if r.status_code == 200 and r.json().get("name"):
+            return {"provider": "gemini", "token": r.json()["name"], "ws_url": GEMINI_WS, "model": f"models/{model}", "hints": hints}
+        last = f"{r.status_code}: {r.text[:300]}"
+        print(f"[voice:gemini] {model} -> {last}")
+        if r.status_code in (401, 403, 429):
+            break
+    if last.startswith(("401", "403")):
+        raise HTTPException(502, "مفتاح Gemini غلط أو مش مفعّل للـ Live API")
+    raise HTTPException(502, "ما قدرنا نشغّل المساعد هسّا (Gemini)")
+
+
 def session_config(page: dict, model: str) -> dict:
     return {
         "type": "realtime",
@@ -144,7 +254,7 @@ def session_config(page: dict, model: str) -> dict:
         "audio": {
             "input": {
                 "transcription": {"model": "gpt-4o-mini-transcribe", "language": "ar",
-                                  "prompt": "محادثة بالعربية، لهجة أردنية، عن طلب أكل وحجز طاولة في مطعم."},
+                                  "prompt": "محادثة بالعربية، لهجة أردنية، عن طلب أكل وحجز طاولة في مطعم هستيريا. كلمات متوقعة: " + "، ".join(vocabulary())},
                 "noise_reduction": {"type": "near_field"},
                 "turn_detection": {"type": "semantic_vad", "eagerness": "high"},
             },
@@ -155,6 +265,7 @@ def session_config(page: dict, model: str) -> dict:
 
 app = FastAPI(title="Hysteria")
 _hits: dict[str, list[float]] = {}
+_retried: dict[str, float] = {}
 
 
 _day = {"date": "", "count": 0}
@@ -208,13 +319,13 @@ async def headers(request: Request, call_next):
 
 @app.get("/api/config")
 def config():
-    return {"voice": bool(key()), "code_required": bool(ACCESS_CODE), "max_minutes": MAX_CALL_MINUTES}
+    return {"voice": bool(key()), "provider": provider(), "code_required": bool(ACCESS_CODE), "max_minutes": MAX_CALL_MINUTES}
 
 
 @app.post("/api/voice/session")
 async def voice_session(request: Request):
     if not key():
-        raise HTTPException(503, "المساعد الصوتي مش مفعّل: حط مفتاح OpenAI بملف .env (شغّل 3-change-key.bat)")
+        raise HTTPException(503, "المساعد الصوتي مش مفعّل: حط مفتاح Gemini أو OpenAI بملف .env (شغّل 3-change-key.bat)")
     try:
         page = await request.json()
     except Exception:
@@ -223,22 +334,30 @@ async def voice_session(request: Request):
         page = {}
     if ACCESS_CODE and not secrets.compare_digest(str((page or {}).get("code", "")).strip(), ACCESS_CODE):
         raise HTTPException(403, "رمز الدخول غلط")
-    if not allow(client_ip(request)):
+    ip = client_ip(request)
+    # one immediate "plain" retry is allowed right after a session (Gemini refused the language hint)
+    retry_ok = page.get("plain") is True and ip in _hits and time.time() - _hits[ip][-1] < 20 and _retried.get(ip) != _hits[ip][-1]
+    if retry_ok:
+        _retried[ip] = _hits[ip][-1]
+    elif not allow(ip):
         raise HTTPException(429, "استنى ثواني وجرّب كمان مرة")
-    if not daily_ok():
+    if not retry_ok and not daily_ok():
         raise HTTPException(429, "خلصت مكالمات اليوم للعرض التجريبي، جرّب بكرا")
+    plain = page.get("plain") is True
     page = {k: str(v)[:400] for k, v in page.items() if k in ("section", "cart")}
+    if provider() == "gemini":
+        return await mint_gemini(page, hints=not plain)
     last = ""
     for model in dict.fromkeys([MODEL, FALLBACK_MODEL]):
         async with httpx.AsyncClient(timeout=20) as c:
             r = await c.post(f"{OPENAI_URL}/realtime/client_secrets",
-                             headers={"Authorization": f"Bearer {key()}"},
+                             headers={"Authorization": f"Bearer {openai_key()}"},
                              json={"session": session_config(page, model)})
         if r.status_code == 200:
             d = r.json()
             value = d.get("value") or (d.get("client_secret") or {}).get("value")
             if value:
-                return {"key": value, "calls_url": f"{OPENAI_URL}/realtime/calls", "model": model}
+                return {"provider": "openai", "key": value, "calls_url": f"{OPENAI_URL}/realtime/calls", "model": model}
         last = f"{r.status_code}: {r.text[:300]}"
         print(f"[voice] {model} -> {last}")
         if r.status_code in (401, 429):
@@ -343,5 +462,5 @@ app.mount("/", StaticFiles(directory=WEB), name="web")
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"\n  مطعم هستيريا شغّال:  http://localhost:{PORT}\n  المساعد الصوتي: {'مفعّل' if key() else 'مش مفعّل (ما في مفتاح)'}{' · محمي برمز' if ACCESS_CODE else ''}\n")
+    print(f"\n  مطعم هستيريا شغّال:  http://localhost:{PORT}\n  المساعد الصوتي: {('مفعّل · ' + provider()) if key() else 'مش مفعّل (ما في مفتاح)'}{' · محمي برمز' if ACCESS_CODE else ''}\n")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")

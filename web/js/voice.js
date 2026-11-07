@@ -1,11 +1,13 @@
-/* هستي — the voice agent. Browser <-> OpenAI Realtime over WebRTC.
+/* هستي — the voice agent. Browser <-> Gemini Live (WebSocket) or OpenAI Realtime (WebRTC).
    The server only mints a short-lived key (/api/voice/session); the real key never reaches the browser.
    Every tool the model calls drives the real site through window.H, so the screen follows the conversation. */
 (() => {
 const H = window.H, $ = s => document.querySelector(s);
 const dock = $("#dock"), log = $("#vLog"), stateEl = $("#vState"), subEl = $("#vSub"), toolEl = $("#vTool");
 let available = null, live = false, demo = false, pc, dc, mic, audioEl, botAnalyser, micAnalyser, ending = false, muted = false;
-let botBubble = null, busy = false, cfg = {}, callTimer;
+let botBubble = null, busy = false, cfg = {}, callTimer, ac = null;
+/* Gemini Live state */
+let ws = null, userBubble = null, playHead = 0, sources = new Set(), outGain = null, micNode = null, micSink = null;
 const codeKey = "hys-code";
 const getCode = () => { try { return localStorage.getItem(codeKey) || ""; } catch { return ""; } };
 const setCode = v => { try { v ? localStorage.setItem(codeKey, v) : localStorage.removeItem(codeKey); } catch {} };
@@ -138,49 +140,180 @@ async function runTool(name, args) {
 async function start() {
   live = true; ending = false; muted = false; $("#vMute").setAttribute("aria-pressed", false);
   openDock(); setState("بتصل بهستي…", "اسمحله يستعمل المايك");
+  // create/resume the audio engine inside the tap, otherwise Safari/Chrome keep it silent
+  try { ac = new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch { ac = null; }
   try {
-    mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
   } catch (e) {
     line("sys", e.name === "NotAllowedError" ? "لازم تسمح للمايك عشان تحكي مع هستي (من القفل جنب العنوان)." : "ما لقينا مايك على هالجهاز.");
     return fail("المايك مش شغّال");
   }
+  let s;
   try {
     const r = await fetch("/api/voice/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: H.section, cart: H.cartText(), code: memCode || getCode() }) });
-    const s = await r.json().catch(() => ({}));
+    s = await r.json().catch(() => ({}));
     if (r.status === 403) { memCode = ""; setCode(""); live = false; cleanup(); closeDock(); return askCode(true); }
     if (!r.ok) throw new Error(s.detail || "السيرفر ما رد");
     if (!live) return cleanup();
-
-    pc = new RTCPeerConnection();
-    audioEl = new Audio(); audioEl.autoplay = true;
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
-    pc.ontrack = e => {
-      audioEl.srcObject = e.streams[0];
-      botAnalyser = ac.createAnalyser(); botAnalyser.fftSize = 512; ac.createMediaStreamSource(e.streams[0]).connect(botAnalyser);
-    };
-    micAnalyser = ac.createAnalyser(); micAnalyser.fftSize = 512; ac.createMediaStreamSource(mic).connect(micAnalyser);
-    mic.getTracks().forEach(t => pc.addTrack(t, mic));
-    pc.onconnectionstatechange = () => { if (["failed", "disconnected"].includes(pc?.connectionState) && live) fail("انقطع الاتصال"); };
-
-    dc = pc.createDataChannel("oai-events");
-    dc.onopen = () => {
-      setState("هستي معك", "احكي براحتك"); send({ type: "response.create" });
-      const mins = cfg.max_minutes || 8;
-      clearTimeout(callTimer);
-      callTimer = setTimeout(() => end(`خلص وقت المكالمة التجريبية (${mins} دقائق)`), mins * 60000);
-    };
-    dc.onmessage = e => onEvent(JSON.parse(e.data));
-
-    const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
-    const sdp = await fetch(s.calls_url, { method: "POST", body: offer.sdp, headers: { Authorization: `Bearer ${s.key}`, "Content-Type": "application/sdp" } });
-    if (!sdp.ok) throw new Error("OpenAI رفض الاتصال (" + sdp.status + ")");
-    await pc.setRemoteDescription({ type: "answer", sdp: await sdp.text() });
+    if (s.provider === "gemini") {
+      try { await startGemini(s); }
+      catch (err) {
+        if (!live || !s.hints) throw err;
+        // Gemini refused the session setup (e.g. language hint) -> one retry with a plain session
+        console.warn("gemini retry without hints:", err);
+        stopGeminiSocket();
+        const r2 = await fetch("/api/voice/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: H.section, cart: H.cartText(), code: memCode || getCode(), plain: true }) });
+        const s2 = await r2.json().catch(() => ({})); if (!r2.ok) throw new Error(s2.detail || "السيرفر ما رد");
+        if (!live) return cleanup();
+        await startGemini(s2);
+      }
+    } else await startOpenAI(s);
   } catch (e) {
     console.error(e);
-    line("sys", e instanceof TypeError ? "ما قدرنا نوصل لـ OpenAI. تأكد من الإنترنت وجرّب كمان مرة." : String(e.message || e));
+    const who = s && s.provider === "gemini" ? "Gemini" : "OpenAI";
+    line("sys", e instanceof TypeError ? `ما قدرنا نوصل لـ ${who}. تأكد من الإنترنت وجرّب كمان مرة.` : String(e.message || e));
     fail("ما زبط الاتصال");
   }
 }
+
+function armCallTimer() {
+  const mins = cfg.max_minutes || 8;
+  clearTimeout(callTimer);
+  callTimer = setTimeout(() => end(`خلص وقت المكالمة التجريبية (${mins} دقائق)`), mins * 60000);
+}
+
+/* ---------- OpenAI Realtime (WebRTC) ---------- */
+async function startOpenAI(s) {
+  pc = new RTCPeerConnection();
+  audioEl = new Audio(); audioEl.autoplay = true;
+  pc.ontrack = e => {
+    audioEl.srcObject = e.streams[0];
+    if (ac) { botAnalyser = ac.createAnalyser(); botAnalyser.fftSize = 512; ac.createMediaStreamSource(e.streams[0]).connect(botAnalyser); }
+  };
+  if (ac) { micAnalyser = ac.createAnalyser(); micAnalyser.fftSize = 512; ac.createMediaStreamSource(mic).connect(micAnalyser); }
+  mic.getTracks().forEach(t => pc.addTrack(t, mic));
+  pc.onconnectionstatechange = () => { if (["failed", "disconnected"].includes(pc?.connectionState) && live) fail("انقطع الاتصال"); };
+  dc = pc.createDataChannel("oai-events");
+  dc.onopen = () => { setState("هستي معك", "احكي براحتك"); send({ type: "response.create" }); armCallTimer(); };
+  dc.onmessage = e => onEvent(JSON.parse(e.data));
+  const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+  const sdp = await fetch(s.calls_url, { method: "POST", body: offer.sdp, headers: { Authorization: `Bearer ${s.key}`, "Content-Type": "application/sdp" } });
+  if (!sdp.ok) throw new Error("OpenAI رفض الاتصال (" + sdp.status + ")");
+  await pc.setRemoteDescription({ type: "answer", sdp: await sdp.text() });
+}
+
+/* ---------- Gemini Live (WebSocket, PCM 16 kHz up / 24 kHz down) ---------- */
+const MIC_WORKLET = `class HysMic extends AudioWorkletProcessor{process(i){const c=i[0]&&i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor("hys-mic",HysMic);`;
+const b64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = str => { const bin = atob(str), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; };
+const gsend = o => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
+
+function stopGeminiSocket() {
+  try { if (ws) { ws.onclose = ws.onmessage = ws.onerror = null; if (ws.readyState <= 1) ws.close(1000); } } catch {}
+  ws = null; try { botAnalyser && botAnalyser.disconnect(); outGain && outGain.disconnect(); } catch {}
+}
+function startGemini(s) {
+  if (!ac) throw new Error("المتصفح ما بيدعم الصوت المطلوب");
+  outGain = ac.createGain(); botAnalyser = ac.createAnalyser(); botAnalyser.fftSize = 512;
+  outGain.connect(botAnalyser); botAnalyser.connect(ac.destination);
+  return new Promise((resolve, reject) => {
+    let ready = false;
+    ws = new WebSocket(`${s.ws_url}?access_token=${encodeURIComponent(s.token)}`);
+    ws.onopen = () => gsend({ setup: { model: s.model } });
+    ws.onmessage = async e => {
+      let msg; try { msg = JSON.parse(typeof e.data === "string" ? e.data : await e.data.text()); } catch { return; }
+      if (msg.setupComplete && !ready) {
+        ready = true; resolve();
+        setState("هستي معك", "احكي براحتك"); armCallTimer();
+        await startMicStream().catch(err => { line("sys", "المايك: " + err.message); fail("المايك مش شغّال"); });
+        gsend({ realtimeInput: { text: "ابدأ المكالمة هسّا: رحّب بالزبون بجملة قصيرة واسأله شو نفسه ياكل." } });
+        return;
+      }
+      onGemini(msg);
+    };
+    ws.onerror = () => { if (!ready) reject(new Error("ما قدرنا نفتح الاتصال مع Gemini")); };
+    ws.onclose = e => {
+      if (!ready) return reject(new Error("Gemini سكّر الاتصال" + (e.reason ? ": " + e.reason : ` (${e.code})`)));
+      if (live) { if (e.code !== 1000 && e.reason) line("sys", "انقطع الاتصال: " + e.reason); end(ending ? "هستي سكّر المكالمة" : "انقطع الاتصال"); }
+    };
+  });
+}
+
+async function startMicStream() {
+  const src = ac.createMediaStreamSource(mic);
+  micAnalyser = ac.createAnalyser(); micAnalyser.fftSize = 512; src.connect(micAnalyser);
+  const url = URL.createObjectURL(new Blob([MIC_WORKLET], { type: "text/javascript" }));
+  await ac.audioWorklet.addModule(url); URL.revokeObjectURL(url);
+  micNode = new AudioWorkletNode(ac, "hys-mic");
+  micSink = ac.createGain(); micSink.gain.value = 0;               // keeps the worklet pulled without playing the mic back
+  src.connect(micNode); micNode.connect(micSink); micSink.connect(ac.destination);
+  const ratio = ac.sampleRate / 16000; let pos = 0, carry = new Float32Array(0), pending = [];
+  micNode.port.onmessage = ev => {
+    if (muted || !ws || ws.readyState !== 1) return;
+    const input = new Float32Array(carry.length + ev.data.length); input.set(carry); input.set(ev.data, carry.length);
+    for (; pos + 1 < input.length; pos += ratio) {                  // linear resample to 16 kHz
+      const i = Math.floor(pos), f = pos - i, v = input[i] * (1 - f) + input[i + 1] * f;
+      pending.push(Math.max(-1, Math.min(1, v)) * 0x7fff);
+    }
+    const used = Math.floor(pos); carry = input.slice(used); pos -= used;
+    if (pending.length >= 640) {                                     // ~40 ms per message
+      const pcm = Int16Array.from(pending); pending = [];
+      gsend({ realtimeInput: { audio: { data: b64(new Uint8Array(pcm.buffer)), mimeType: "audio/pcm;rate=16000" } } });
+    }
+  };
+}
+
+function playPcm(b64data, mime) {
+  const rate = +((/rate=(\d+)/.exec(mime || "") || [])[1] || 24000);
+  const u8 = unb64(b64data), n = u8.length >> 1; if (!n) return;
+  const dv = new DataView(u8.buffer), buf = ac.createBuffer(1, n, rate), ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = dv.getInt16(i * 2, true) / 0x8000;
+  const src = ac.createBufferSource(); src.buffer = buf; src.connect(outGain);
+  playHead = Math.max(playHead, ac.currentTime + 0.03); src.start(playHead); playHead += buf.duration;
+  sources.add(src); src.onended = () => sources.delete(src);
+}
+function stopPlayback() { sources.forEach(x => { try { x.stop(); } catch {} }); sources.clear(); playHead = 0; }
+const playbackLeft = () => Math.max(0, playHead - (ac ? ac.currentTime : 0));
+
+async function onGemini(msg) {
+  const sc = msg.serverContent;
+  if (sc) {
+    if (sc.interrupted) { stopPlayback(); botBubble = null; setState("بسمعك…", "كمّل"); }
+    if (sc.inputTranscription && sc.inputTranscription.text) {
+      setState("بسمعك…", "كمّل");
+      if (!userBubble) { userBubble = line("u", ""); botBubble = null; }
+      userBubble.textContent += sc.inputTranscription.text; log.scrollTop = log.scrollHeight;
+    }
+    for (const part of (sc.modelTurn && sc.modelTurn.parts) || []) {
+      if (part.inlineData && part.inlineData.data && /audio/.test(part.inlineData.mimeType || "audio")) {
+        userBubble = null; setState("هستي بيحكي…", "قاطعه وقت ما بدك"); playPcm(part.inlineData.data, part.inlineData.mimeType);
+      }
+    }
+    if (sc.outputTranscription && sc.outputTranscription.text) {
+      userBubble = null;
+      if (!botBubble) botBubble = line("b", "");
+      botBubble.textContent += sc.outputTranscription.text; log.scrollTop = log.scrollHeight;
+    }
+    if (sc.turnComplete) {
+      botBubble = null; userBubble = null;
+      setTimeout(() => { if (live && !busy && !sources.size) setState("بسمعك…", "احكي براحتك"); }, playbackLeft() * 1000 + 100);
+      if (ending) setTimeout(() => end("هستي سكّر المكالمة"), playbackLeft() * 1000 + 700);
+    }
+  }
+  if (msg.toolCall && msg.toolCall.functionCalls) {
+    busy = true; setState("ثانية…", "هستي بيحرّك الشاشة");
+    const functionResponses = [];
+    for (const c of msg.toolCall.functionCalls) {
+      const out = await runTool(c.name, c.args || {});
+      functionResponses.push({ id: c.id, name: c.name, response: { result: out } });
+    }
+    busy = false;
+    gsend({ toolResponse: { functionResponses } });
+    if (ending) setTimeout(() => end("هستي سكّر المكالمة"), playbackLeft() * 1000 + 2500);
+  }
+  if (msg.goAway) line("sys", "المكالمة رح تخلص بعد شوي");
+}
+
 const send = o => { if (dc?.readyState === "open") dc.send(JSON.stringify(o)); };
 
 async function onEvent(ev) {
@@ -216,8 +349,12 @@ function end(t) { if (!live) return; line("sys", t); live = false; cleanup(); se
 function cleanup() {
   clearTimeout(callTimer);
   try { dc?.close(); } catch {} try { pc?.close(); } catch {}
+  try { if (ws && ws.readyState <= 1) ws.close(1000, "bye"); } catch {}
+  stopPlayback();
+  try { micNode?.port && (micNode.port.onmessage = null); micNode?.disconnect(); micSink?.disconnect(); } catch {}
   mic?.getTracks().forEach(t => t.stop()); if (audioEl) audioEl.srcObject = null;
-  pc = dc = mic = null; botAnalyser = micAnalyser = null; botBubble = null;
+  try { ac && ac.state !== "closed" && ac.close(); } catch {}
+  pc = dc = mic = ws = micNode = micSink = outGain = ac = null; botAnalyser = micAnalyser = null; botBubble = userBubble = null; busy = false;
 }
 addEventListener("pagehide", cleanup);
 
@@ -258,5 +395,5 @@ async function runDemo() {
   if (demo) { setState("خلصت الجولة", "شغّل السيرفر عشان تحكي مع هستي فعلياً"); await H.sleep(4000); }
   demo = false; closeDock(); $("#vEnd").onclick = () => end("سكّرت المكالمة");
 }
-window.HYS_VOICE = { runDemo, TOOLS, runTool, _onEvent: onEvent };
+window.HYS_VOICE = { runDemo, TOOLS, runTool, _onEvent: onEvent, _onGemini: onGemini };
 })();

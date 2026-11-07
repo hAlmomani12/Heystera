@@ -10,16 +10,19 @@
 بدون مفتاح: اكبس «احكي مع هستي» ثم «الجولة التجريبية».
 
 ## كيف شغّال
-- `server.py` (FastAPI): بيخدم الموقع، وبيطلع مفتاح OpenAI Realtime مؤقت لكل مكالمة (`/api/voice/session`)، وبيحفظ الطلبات والحجوزات.
-- المتصفح بيحكي مع OpenAI مباشرة عبر WebRTC، والمفتاح الحقيقي ما بيطلع من السيرفر.
+- `server.py` (FastAPI): بيخدم الموقع، وبيطلع مفتاح مؤقت لكل مكالمة (`/api/voice/session`): Gemini (`auth_tokens`) أو OpenAI، وبيحفظ الطلبات والحجوزات.
+- المتصفح بيحكي مع Gemini Live مباشرة عبر WebSocket (صوت PCM 16kHz رايح و24kHz راجع)، أو مع OpenAI عبر WebRTC. المفتاح الحقيقي ما بيطلع من السيرفر.
 - `web/js/voice.js`: أدوات هستي (`show_dish`، `add_to_order`، `fill_reservation`، ...) وكل وحدة بتحرّك الموقع الحقيقي.
 - `web/data/restaurant.js`: القائمة والأسعار والمعلومات. مصدر واحد للموقع ولهستي.
 
 ## الإعدادات (`.env`)
+هستي بيشتغل على **Gemini Live** (الافتراضي) أو **OpenAI Realtime**. شغّل `3-change-key.bat` واختار.
 ```
-OPENAI_API_KEY=sk-...
-REALTIME_MODEL=gpt-realtime-2.1
-VOICE=marin
+VOICE_PROVIDER=gemini          # أو openai
+GEMINI_API_KEY=AIza...         # من aistudio.google.com/apikey
+GEMINI_MODEL=gemini-3.8-live   # بديل تلقائي: gemini-3.1-flash-live-preview
+GEMINI_VOICE=Puck              # أصوات ثانية: Charon, Kore, Fenrir, Aoede, Leda, Orus, Zephyr
+OPENAI_API_KEY=sk-...          # اختياري
 PORT=8000
 ```
 `.env` مش مرفوع على GitHub.
@@ -27,7 +30,7 @@ PORT=8000
 ## الرفع على Render
 1. ادخل [dashboard.render.com](https://dashboard.render.com) ← **New** ← **Blueprint** ← اختار هذا الريبو.
 2. Render بيقرأ `render.yaml` لحاله. عبّي:
-   - `OPENAI_API_KEY`: مفتاحك.
+   - `GEMINI_API_KEY`: مفتاح Gemini (أو `OPENAI_API_KEY` وغيّر `VOICE_PROVIDER` لـ openai).
    - `ACCESS_CODE`: رمز بتعطيه للعميل (مثلاً `hysteria2026`). إذا تركته فاضي، أي حدا معه الرابط بيقدر يحكي مع هستي على حسابك.
 3. **Apply**، واستنى 2–3 دقائق، وبيطلعلك رابط مثل `https://heystera.onrender.com`.
 
