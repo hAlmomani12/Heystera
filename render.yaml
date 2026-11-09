@@ -31,3 +31,9 @@ services:
         value: gpt-realtime-2.1
       - key: VOICE
         value: marin
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_AUTHORIZED_PARTIES
+        sync: false

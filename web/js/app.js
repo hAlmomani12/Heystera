@@ -177,12 +177,16 @@ function keepForm() { const v = id => $("#" + id)?.value; const me = store("hys-
 /* POST to our server. Offline (opened as a file / no server) -> {offline:true}; a server rejection -> {error}. */
 async function post(url, body) {
   if (location.protocol === "file:") return { offline: true };
+  // orders and bookings are for signed-in members: no session -> open the sign-in window
+  const token = await window.HysAuth?.token().catch(() => null);
+  if (!token) { window.HysAuth?.signIn(); return { error: "لازم تسجّل دخول أو تعمل حساب عشان تطلب أو تحجز" }; }
   let r;
-  try { r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }
+  try { r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) }); }
   catch { document.body.classList.add("is-offline"); return { error: "ما في إنترنت هسّا. تأكد من الاتصال وجرّب كمان مرة." }; }
   document.body.classList.remove("is-offline");
   if (r.status === 404 || r.status === 405) return { offline: true };   // static hosting without our API
   const j = await r.json().catch(() => ({}));
+  if (r.status === 401) window.HysAuth?.signIn();
   return r.ok ? j : { error: j.detail || "صار خطأ، جرّب كمان مرة" };
 }
 async function submitOrder(fields = {}) {

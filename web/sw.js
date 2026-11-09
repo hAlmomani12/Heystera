@@ -2,9 +2,9 @@
    - Pages, scripts, styles and menu data: network first (always fresh when online), cached copy when offline.
    - Images, icons, fonts: cache first (they never change once published).
    - /api/* and anything to OpenAI: never cached — orders, bookings and calls must be live. */
-const VERSION = "hysteria-v1";
+const VERSION = "hysteria-v2";
 const SHELL = [
-  "/", "/css/site.css", "/js/app.js", "/js/voice.js", "/data/restaurant.js", "/manifest.webmanifest",
+  "/", "/css/site.css", "/js/auth.js", "/js/app.js", "/js/voice.js", "/data/restaurant.js", "/manifest.webmanifest",
   "/brand/logo-wordmark@sm.png", "/brand/logo-wordmark.png", "/brand/icon-192.png", "/brand/favicon-64.png",
 ];
 

@@ -18,6 +18,8 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from clerk_backend_api.security import authenticate_request_async
+from clerk_backend_api.security.types import AuthenticateRequestOptions
 
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("text/javascript", ".js")
@@ -26,8 +28,10 @@ ROOT = Path(__file__).parent
 WEB = ROOT / "web"
 
 # ---------- .env ----------
-_env = ROOT / ".env"
-if _env.exists():
+# .env.local holds the Clerk keys written by `clerk env pull`
+for _env in (ROOT / ".env", ROOT / ".env.local"):
+    if not _env.exists():
+        continue
     for line in _env.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
@@ -52,6 +56,29 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-live")
 GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.1-flash-live-preview")
 GEMINI_VOICE = os.environ.get("GEMINI_VOICE", "Puck")
 GEMINI_LANG = [c.strip() for c in os.environ.get("GEMINI_LANG", "ar-JO").split(",") if c.strip()]  # speech recognition language hint
+
+
+# Clerk sign-in: orders and bookings are for signed-in members only
+def clerk_pk() -> str:
+    for k in ("CLERK_PUBLISHABLE_KEY", "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "VITE_CLERK_PUBLISHABLE_KEY", "PUBLIC_CLERK_PUBLISHABLE_KEY"):
+        if os.environ.get(k, "").strip():
+            return os.environ[k].strip()
+    return ""
+
+
+CLERK_PARTIES = [o.strip() for o in os.environ.get("CLERK_AUTHORIZED_PARTIES", "").split(",") if o.strip()]  # e.g. https://heystera.onrender.com
+
+
+async def member(request: Request) -> dict:
+    """Return the signed-in Clerk user's claims, or stop the request with 401."""
+    secret = os.environ.get("CLERK_SECRET_KEY", "").strip()
+    if not secret:
+        raise HTTPException(503, "تسجيل الدخول مش مفعّل على السيرفر")
+    state = await authenticate_request_async(request, AuthenticateRequestOptions(
+        secret_key=secret, authorized_parties=CLERK_PARTIES or None))
+    if not state.is_signed_in:
+        raise HTTPException(401, "لازم تسجّل دخول عشان تطلب أو تحجز")
+    return state.payload or {}
 
 
 def openai_key() -> str:
@@ -322,7 +349,8 @@ async def headers(request: Request, call_next):
 
 @app.get("/api/config")
 def config():
-    return {"voice": bool(key()), "provider": provider(), "code_required": bool(ACCESS_CODE), "max_minutes": MAX_CALL_MINUTES}
+    return {"voice": bool(key()), "provider": provider(), "code_required": bool(ACCESS_CODE), "max_minutes": MAX_CALL_MINUTES,
+            "clerk_pk": clerk_pk()}
 
 
 @app.post("/api/voice/session")
@@ -398,6 +426,7 @@ def _save(path: Path, rec: dict, prefix: str) -> dict:
 
 @app.post("/api/order")
 async def order(request: Request):
+    user = await member(request)
     body = await json_body(request)
     name, phone, method = text(body.get("name"), 80), text(body.get("phone"), 30), text(body.get("method"), 20) or "delivery"
     address = text(body.get("address"), 300)
@@ -423,11 +452,12 @@ async def order(request: Request):
     total = round(sum(prices[i["id"]] * i["qty"] for i in items), 2)
     fee = 1.5 if method == "delivery" and total < 25 else 0
     return _save(ORDERS, {"name": name, "phone": phone, "method": method, "address": address,
-                          "items": items, "subtotal": total, "delivery_fee": fee, "total": round(total + fee, 2)}, "H")
+                          "user_id": user.get("sub"), "items": items, "subtotal": total, "delivery_fee": fee, "total": round(total + fee, 2)}, "H")
 
 
 @app.post("/api/booking")
 async def booking(request: Request):
+    user = await member(request)
     body = await json_body(request)
     rec = {k: text(body.get(k), 300 if k == "note" else 80) for k in ("name", "phone", "date", "time", "area", "note")}
     if not all(rec[k] for k in ("name", "phone", "date", "time")):
@@ -446,6 +476,7 @@ async def booking(request: Request):
     if not 1 <= guests <= 40:
         raise HTTPException(400, "عدد الأشخاص لازم يكون بين 1 و40")
     rec["guests"] = guests
+    rec["user_id"] = user.get("sub")
     if rec["area"] not in ("indoor", "terrace", "private"):
         rec["area"] = "indoor"
     return _save(BOOKINGS, rec, "B")

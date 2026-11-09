@@ -403,3 +403,10 @@ footer{border-top:1px solid var(--line);padding:clamp(60px,8vw,100px) 0 130px;ov
 @media (max-width:720px) and (display-mode: standalone){.cart{bottom:calc(86px + env(safe-area-inset-bottom))}}
 .offline-pill{position:fixed;bottom:calc(84px + env(safe-area-inset-bottom));left:12px;right:12px;margin:0 auto;width:fit-content;z-index:97;padding:6px 14px;border-radius:999px;background:#3a1a0c;border:1px solid rgba(255,181,71,.35);color:var(--saffron);font-size:13px;font-weight:600;display:none}
 body.is-offline .offline-pill{display:block}
+
+/* Clerk sign-in controls in the header */
+.auth-box{display:flex;align-items:center;gap:8px}
+.auth-box[hidden]{display:none}
+.auth-btn{height:40px;padding-inline:16px;font-size:14px}
+.auth-user{display:grid;place-items:center;min-width:36px}
+@media (max-width:720px){.auth-box .btn-hot{display:none}}

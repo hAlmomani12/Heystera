@@ -1,4 +1,6 @@
 .env
+.env.local
+.clerk/
 .venv/
 __pycache__/
 orders.jsonl
